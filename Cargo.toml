@@ -10,3 +10,7 @@ categories = ["finance", "simulation", "mathematics", "algorithms", "science"]
 repository = "https://github.com/carlobortolan/kospi200-feed-handler"
 documentation = "https://docs.rs/kospi200-feed-handler"
 homepage = "https://github.com/carlobortolan/kospi200-feed-handler"
+
+[[bin]]
+name = "parse-quote"
+path = "src/main.rs"
