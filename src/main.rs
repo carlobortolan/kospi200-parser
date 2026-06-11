@@ -11,6 +11,21 @@ struct PcapHeader {
     network: u32,
 }
 
+struct PcapContext {
+    swapped: bool,
+}
+
+fn read_u16(data: &[u8], swapped: bool) -> u16 {
+    let value = u16::from_ne_bytes([data[0], data[1]]);
+    if swapped { value.swap_bytes() } else { value }
+}
+
+fn read_u32(data: &[u8], swapped: bool) -> u32 {
+    let value = u32::from_ne_bytes([data[0], data[1], data[2], data[3]]);
+
+    if swapped { value.swap_bytes() } else { value }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
@@ -23,43 +38,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = BufReader::new(file);
 
     let mut global_header = [0u8; 24];
-
     reader.read_exact(&mut global_header)?;
 
-    let magic = u32::from_le_bytes([
+    let magic = u32::from_ne_bytes([
         global_header[0],
         global_header[1],
         global_header[2],
         global_header[3],
     ]);
 
-    if magic != 0xa1b2c3d4 {
-        return Err(Box::new(Error::new(
-            ErrorKind::InvalidData,
-            "unsupported pcap format",
-        )));
-    }
+    let swapped = match magic {
+        0xa1b2c3d4 => false,
+        0xd4c3b2a1 => true,
+        _ => {
+            return Err(Box::new(Error::new(
+                ErrorKind::InvalidData,
+                "unsupported pcap magic",
+            )));
+        }
+    };
+
+    let ctx = PcapContext { swapped };
 
     let header = PcapHeader {
-        version_major: u16::from_le_bytes([global_header[4], global_header[5]]),
-        version_minor: u16::from_le_bytes([global_header[6], global_header[7]]),
-        snaplen: u32::from_le_bytes([
-            global_header[16],
-            global_header[17],
-            global_header[18],
-            global_header[19],
-        ]),
-        network: u32::from_le_bytes([
-            global_header[20],
-            global_header[21],
-            global_header[22],
-            global_header[23],
-        ]),
+        version_major: read_u16(&global_header[4..6], swapped),
+        version_minor: read_u16(&global_header[6..8], swapped),
+        snaplen: read_u32(&global_header[16..20], swapped),
+        network: read_u32(&global_header[20..24], swapped),
     };
 
     println!(
-        "pcap version {}.{} snaplen={} network={}",
-        header.version_major, header.version_minor, header.snaplen, header.network
+        "pcap version {}.{} snaplen={} network={} swapped={}",
+        header.version_major, header.version_minor, header.snaplen, header.network, ctx.swapped
     );
 
     let mut packet_header = [0u8; 16];
@@ -71,33 +81,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => return Err(Box::new(e)),
         }
 
-        let timestamp_seconds = u32::from_le_bytes([
-            packet_header[0],
-            packet_header[1],
-            packet_header[2],
-            packet_header[3],
-        ]);
+        let timestamp_seconds = read_u32(&packet_header[0..4], ctx.swapped);
 
-        let timestamp_fraction = u32::from_le_bytes([
-            packet_header[4],
-            packet_header[5],
-            packet_header[6],
-            packet_header[7],
-        ]);
+        let timestamp_fraction = read_u32(&packet_header[4..8], ctx.swapped);
 
-        let captured_length = u32::from_le_bytes([
-            packet_header[8],
-            packet_header[9],
-            packet_header[10],
-            packet_header[11],
-        ]);
+        let captured_length = read_u32(&packet_header[8..12], ctx.swapped);
 
-        let original_length = u32::from_le_bytes([
-            packet_header[12],
-            packet_header[13],
-            packet_header[14],
-            packet_header[15],
-        ]);
+        let original_length = read_u32(&packet_header[12..16], ctx.swapped);
 
         println!(
             "packet timestamp={}.{:06} captured={} original={}",
