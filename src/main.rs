@@ -5,15 +5,12 @@ use std::fs::File;
 use std::io::{BufReader, Error, ErrorKind, Read};
 
 const TARGET_PORTS: [u16; 2] = [15515, 15516];
+const QUOTE_PACKET_MAGIC: &[u8] = b"B6034";
+const QUOTE_PACKET_LENGTH: usize = 215;
 
 struct PcapContext {
     swapped: bool,
     link_type: u32,
-}
-
-fn read_u16(data: &[u8], swapped: bool) -> u16 {
-    let value = u16::from_ne_bytes([data[0], data[1]]);
-    if swapped { value.swap_bytes() } else { value }
 }
 
 fn read_u32(data: &[u8], swapped: bool) -> u32 {
@@ -23,10 +20,10 @@ fn read_u32(data: &[u8], swapped: bool) -> u32 {
 }
 
 fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
-    let mut offset = match link_type {
-        1 => 14,   // Ethernet
-        113 => 16, // Linux cooked capture
-        12 => 0,   // Raw IP
+    let offset = match link_type {
+        1 => 14,
+        113 => 16,
+        12 => 0,
         _ => return None,
     };
 
@@ -34,23 +31,11 @@ fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
         return None;
     }
 
-    let version = packet[offset] >> 4;
-
-    if version != 4 {
+    if packet[offset] >> 4 != 4 {
         return None;
     }
 
     let ip_header_length = ((packet[offset] & 0x0f) as usize) * 4;
-
-    if packet.len() < offset + ip_header_length {
-        return None;
-    }
-
-    let protocol = packet[offset + 9];
-
-    if protocol != 17 {
-        return None;
-    }
 
     let udp_offset = offset + ip_header_length;
 
@@ -58,19 +43,31 @@ fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
         return None;
     }
 
-    let destination_port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
-
-    if !TARGET_PORTS.contains(&destination_port) {
+    if packet[offset + 9] != 17 {
         return None;
     }
 
-    let payload_offset = udp_offset + 8;
+    let dst_port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
 
-    if payload_offset >= packet.len() {
+    if !TARGET_PORTS.contains(&dst_port) {
         return None;
     }
 
-    Some(&packet[payload_offset..])
+    Some(&packet[(udp_offset + 8)..])
+}
+
+fn extract_quote(payload: &[u8]) -> Option<u64> {
+    if payload.len() < QUOTE_PACKET_LENGTH {
+        return None;
+    }
+
+    if &payload[0..5] != QUOTE_PACKET_MAGIC {
+        return None;
+    }
+
+    let accept_key = u64::from_be_bytes(payload[206..214].try_into().ok()?);
+
+    Some(accept_key)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,7 +82,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = BufReader::new(file);
 
     let mut global_header = [0u8; 24];
-
     reader.read_exact(&mut global_header)?;
 
     let magic = u32::from_ne_bytes([
@@ -106,9 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let link_type = read_u32(&global_header[20..24], swapped);
-
-    let ctx = PcapContext { swapped, link_type };
+    let ctx = PcapContext {
+        swapped,
+        link_type: read_u32(&global_header[20..24], swapped),
+    };
 
     let mut packet_header = [0u8; 16];
 
@@ -119,14 +116,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => return Err(Box::new(e)),
         }
 
-        let captured_length = read_u32(&packet_header[8..12], ctx.swapped);
+        let length = read_u32(&packet_header[8..12], ctx.swapped);
 
-        let mut packet = vec![0u8; captured_length as usize];
+        let mut packet = vec![0u8; length as usize];
 
         reader.read_exact(&mut packet)?;
 
         if let Some(payload) = extract_udp_payload(&packet, ctx.link_type) {
-            println!("udp payload found: {} bytes", payload.len());
+            if let Some(key) = extract_quote(payload) {
+                println!("quote packet accept_key={}", key);
+            }
         }
     }
 
