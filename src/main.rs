@@ -45,15 +45,33 @@ fn read_u32(data: &[u8], swapped: bool) -> u32 {
     if swapped { value.swap_bytes() } else { value }
 }
 
-fn timestamp_to_micros(seconds: u32, fraction: u32, is_nano: bool) -> u64 {
-    let subsecond = if is_nano { fraction / 1000 } else { fraction };
+fn timestamp_to_micros(seconds: u32, fraction: u32, nano: bool) -> u64 {
+    let micros = if nano { fraction / 1000 } else { fraction };
 
-    seconds as u64 * 1_000_000 + subsecond as u64
+    seconds as u64 * 1_000_000 + micros as u64
+}
+
+fn ethernet_offset(packet: &[u8]) -> Option<usize> {
+    if packet.len() < 14 {
+        return None;
+    }
+
+    let ethertype = u16::from_be_bytes([packet[12], packet[13]]);
+
+    if ethertype == 0x8100 {
+        if packet.len() < 18 {
+            return None;
+        }
+
+        Some(18)
+    } else {
+        Some(14)
+    }
 }
 
 fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
     let offset = match link_type {
-        1 => 14,
+        1 => ethernet_offset(packet)?,
         113 => 16,
         12 => 0,
         _ => return None,
@@ -69,7 +87,13 @@ fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
 
     let ip_len = ((packet[offset] & 0x0f) as usize) * 4;
 
-    if packet.len() < offset + ip_len + 8 {
+    if ip_len < 20 {
+        return None;
+    }
+
+    let udp_offset = offset + ip_len;
+
+    if packet.len() < udp_offset + 8 {
         return None;
     }
 
@@ -77,27 +101,25 @@ fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
         return None;
     }
 
-    let udp_offset = offset + ip_len;
+    let dst_port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
 
-    let port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
-
-    if !TARGET_PORTS.contains(&port) {
+    if !TARGET_PORTS.contains(&dst_port) {
         return None;
     }
 
     Some(&packet[udp_offset + 8..])
 }
 
-fn extract_quote(packet: &[u8]) -> Option<&[u8]> {
-    if packet.len() < QUOTE_PACKET_LENGTH {
+fn extract_quote(payload: &[u8]) -> Option<&[u8]> {
+    if payload.len() < QUOTE_PACKET_LENGTH {
         return None;
     }
 
-    if &packet[..5] != QUOTE_PACKET_MAGIC {
+    if &payload[..5] != QUOTE_PACKET_MAGIC {
         return None;
     }
 
-    Some(&packet[..QUOTE_PACKET_LENGTH])
+    Some(&payload[..QUOTE_PACKET_LENGTH])
 }
 
 fn format_output_string(ts_sec: u32, ts_usec: u32, payload: &[u8]) -> String {
@@ -105,7 +127,43 @@ fn format_output_string(ts_sec: u32, ts_usec: u32, payload: &[u8]) -> String {
 
     let accept = std::str::from_utf8(&payload[206..214]).unwrap_or("");
 
-    format!("{}.{:06} {} {}", ts_sec, ts_usec, accept, issue)
+    let mut output = String::with_capacity(256);
+
+    output.push_str(&format!("{}.{:06} {} {}", ts_sec, ts_usec, accept, issue));
+
+    let bid_offsets = [
+        (77, 82, 82, 89),
+        (65, 70, 70, 77),
+        (53, 58, 58, 65),
+        (41, 46, 46, 53),
+        (29, 34, 34, 41),
+    ];
+
+    for &(ps, pe, qs, qe) in &bid_offsets {
+        let price = std::str::from_utf8(&payload[ps..pe]).unwrap_or("");
+
+        let qty = std::str::from_utf8(&payload[qs..qe]).unwrap_or("");
+
+        output.push_str(&format!(" {}@{}", qty, price));
+    }
+
+    let ask_offsets = [
+        (96, 101, 101, 108),
+        (108, 113, 113, 120),
+        (120, 125, 125, 132),
+        (132, 137, 137, 144),
+        (144, 149, 149, 156),
+    ];
+
+    for &(ps, pe, qs, qe) in &ask_offsets {
+        let price = std::str::from_utf8(&payload[ps..pe]).unwrap_or("");
+
+        let qty = std::str::from_utf8(&payload[qs..qe]).unwrap_or("");
+
+        output.push_str(&format!(" {}@{}", qty, price));
+    }
+
+    output
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
