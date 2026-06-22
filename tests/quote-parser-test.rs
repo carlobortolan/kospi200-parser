@@ -28,19 +28,22 @@ mod tests {
     fn test_format_output_string() {
         let mut payload = vec![b'0'; 215]; // Fill with ASCII '0'
 
-        // Mock the Magic Bytes, ISIN, and Accept Time
-        payload[0..5].copy_from_slice(b"B6034");
-        payload[5..17].copy_from_slice(b"KR7005930003"); // Issue Code
-        payload[206..214].copy_from_slice(b"09000123"); // Accept Time
+        payload[0..5].copy_from_slice(b"B6034"); // Mock Magic Bytes
+        payload[5..17].copy_from_slice(b"KR7005930003"); // Mock Issue Code
+        payload[206..214].copy_from_slice(b"09000123"); // Mock Accept Time
 
         let mut format_buf: Vec<u8> = Vec::with_capacity(256);
 
-        let output = format_output_string(1297846801, 123456, &payload, &mut format_buf);
+        format_output_string(1297846801, 123456, &payload, &mut format_buf);
+
+        // Convert the bytes back to string for assert
+        let output = String::from_utf8_lossy(&format_buf);
 
         // Verify time headers and ISIN
-        // assert!(output.starts_with("1297846801.123456 09000123 KR7005930003"));
-        // Verify the 1st bid is correctly positioned at the end of the bid block
-        // assert!(output.contains(" 0000010@00500"));
+        assert!(output.starts_with("1297846801.123456 09000123 KR7005930003"));
+
+        // Since payload is filled with '0', QTY is 7 chars, Price is 5 chars
+        assert!(output.contains(" 0000000@00000"));
     }
 
     #[test]

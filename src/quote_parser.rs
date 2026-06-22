@@ -12,7 +12,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::Write as IoWrite;
-use std::io::{BufReader, Error, ErrorKind, Read};
+use std::io::{Error, ErrorKind};
 
 const MAX_DELAY_MICROSECONDS: u64 = 3_000_000; // 3 seconds
 const MAX_CAPTURE_SIZE: usize = 16 * 1024 * 1024; // 16 MB
@@ -31,11 +31,11 @@ pub struct ParseStats {
 
 /// Represents a single Quote packet waiting in the sliding window.
 ///
-/// Stores the raw 215-byte `payload` inline as a fixed-size array rather
-/// than generating the output String immediately. This prevents fragmented
-/// heap allocations while the packet sits in the heap.
+/// This struct does not copy the payload (zero-copy architecture), but
+/// holds a slice reference (`&'a [u8]`) pointing to the memory-mapped
+/// PCAP file, bypassing heap allocations.
 #[derive(Eq, PartialEq)]
-struct QuotePacket {
+struct QuotePacket<'a> {
     /// 8-byte exchange accept time (e.g., "09000123") used later for sorting.
     accept_key: u64,
 
@@ -49,12 +49,12 @@ struct QuotePacket {
     ts_usec: u32,
 
     /// Application data stored inline to keep the heap cache-friendly.
-    payload: [u8; QUOTE_PACKET_LENGTH],
+    payload: &'a [u8], // 8 bytes fat pointer for zero-copy payload reference
 }
 
 /// Orders packets chronologically by the exchange's `accept_key` (Wall Clock).
 /// If two packets have the same accept time, fallback to the `pkt_time` (Network Clock).
-impl Ord for QuotePacket {
+impl<'a> Ord for QuotePacket<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.accept_key
             .cmp(&other.accept_key)
@@ -65,7 +65,7 @@ impl Ord for QuotePacket {
 /// Implements partial ordering by delegating to the total ordering defined in `Ord`.
 ///
 /// Required by Rust's trait system to allow `QuotePacket` to be sorted in `BinaryHeap`.
-impl PartialOrd for QuotePacket {
+impl<'a> PartialOrd for QuotePacket<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -86,62 +86,66 @@ struct PcapContext {
     link_type: u32,
 }
 
-/// Parse a PCAP file and stream every output line.
+/// Parses a PCAP file using zero-copy memory mapping (`mmap`).
 ///
-/// This avoids storing the entire output in memory.
+/// Bypasses standard I/O syscall overhead by mapping the entire file into virtual
+/// memory. Yields raw byte slices to the callback to avoid UTF-8 validation overhead.
 pub fn parse_pcap_with_stats<F>(
     filename: &str,
     reorder: bool,
     mut callback: F,
 ) -> Result<ParseStats, Box<dyn std::error::Error>>
 where
-    F: FnMut(&Vec<u8>),
+    F: FnMut(&[u8]),
 {
     let file = File::open(filename)?;
 
-    let mut reader = BufReader::with_capacity(256 * 1024, file);
+    // TODO: Assuming that PCAP file is not being truncated by another process
+    // while reading it, which is standard for historical backtesting.
+    let mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
 
-    let context = read_pcap_context(&mut reader)?;
+    if mmap.len() < 24 {
+        return Err(Box::new(Error::new(
+            ErrorKind::UnexpectedEof,
+            "File too small",
+        )));
+    }
+
+    let context = read_pcap_context(&mmap[0..24])?;
+    let mut cursor = 24;
 
     let mut heap = BinaryHeap::<Reverse<QuotePacket>>::new();
-
-    let mut packet_buffer = vec![0u8; 65535];
-
-    let mut packet_header = [0u8; 16];
-
     let mut max_time = 0u64;
-
     let mut stats = ParseStats::default();
-
     let mut format_buf: Vec<u8> = Vec::with_capacity(256);
 
-    while reader.read_exact(&mut packet_header).is_ok() {
-        let incl_len = read_u32(&packet_header[8..12], context.is_swapped) as usize;
+    while cursor + 16 <= mmap.len() {
+        let header = &mmap[cursor..cursor + 16];
+        cursor += 16;
 
-        if incl_len > MAX_CAPTURE_SIZE || incl_len > packet_buffer.len() {
+        let incl_len = read_u32(&header[8..12], context.is_swapped) as usize;
+
+        if incl_len > MAX_CAPTURE_SIZE || cursor + incl_len > mmap.len() {
+            cursor += incl_len;
             continue;
         }
 
-        let ts_sec = read_u32(&packet_header[0..4], context.is_swapped);
-
-        let ts_fraction = read_u32(&packet_header[4..8], context.is_swapped);
-
+        let ts_sec = read_u32(&header[0..4], context.is_swapped);
+        let ts_fraction = read_u32(&header[4..8], context.is_swapped);
         let ts_usec = if context.is_nano {
             ts_fraction / 1000
         } else {
             ts_fraction
         };
-
         let pkt_time = ts_sec as u64 * 1_000_000 + ts_usec as u64;
 
-        max_time = max_time.max(pkt_time);
+        let packet_data = &mmap[cursor..cursor + incl_len];
+        cursor += incl_len;
 
-        let buf_slice = &mut packet_buffer[..incl_len];
-        reader.read_exact(buf_slice)?;
-
-        if let Some(payload) = extract_udp_payload(buf_slice, context.link_type) {
+        if let Some(payload) = extract_udp_payload(packet_data, context.link_type) {
             if let Some(quote) = extract_quote(payload) {
                 stats.quotes += 1;
+                max_time = max_time.max(pkt_time);
 
                 if !reorder {
                     format_output_string(ts_sec, ts_usec, quote, &mut format_buf);
@@ -151,22 +155,30 @@ where
 
                 let accept_key = u64::from_be_bytes(quote[206..214].try_into().unwrap());
 
-                // Copy bytes safely into fixed-size array
-                let mut payload_arr = [0u8; QUOTE_PACKET_LENGTH];
-
-                payload_arr.copy_from_slice(quote);
-
                 heap.push(Reverse(QuotePacket {
                     accept_key,
                     pkt_time,
                     ts_sec,
                     ts_usec,
-                    payload: payload_arr,
+                    payload: quote, // Just storing the slice pointer!
                 }));
 
                 stats.max_heap_size = stats.max_heap_size.max(heap.len());
 
-                flush_expired(&mut heap, max_time, &mut format_buf, &mut callback);
+                while let Some(Reverse(packet)) = heap.peek() {
+                    if packet.pkt_time + MAX_DELAY_MICROSECONDS <= max_time {
+                        let packet = heap.pop().unwrap().0;
+                        format_output_string(
+                            packet.ts_sec,
+                            packet.ts_usec,
+                            packet.payload,
+                            &mut format_buf,
+                        );
+                        callback(&format_buf);
+                    } else {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -176,7 +188,7 @@ where
             format_output_string(
                 packet.ts_sec,
                 packet.ts_usec,
-                &packet.payload,
+                packet.payload,
                 &mut format_buf,
             );
             callback(&format_buf);
@@ -211,21 +223,13 @@ pub fn parse_to_string(filename: &str, reorder: bool) -> String {
 ///
 /// Validates the PCAP magic number to determine the file's endianness
 /// (native vs swapped) and timestamp precision (μs vs ns).
-fn read_pcap_context(
-    reader: &mut BufReader<File>,
-) -> Result<PcapContext, Box<dyn std::error::Error>> {
-    let mut global_header = [0u8; 24];
-
-    reader.read_exact(&mut global_header)?;
-
-    let magic = u32::from_ne_bytes(global_header[0..4].try_into().unwrap());
-
+fn read_pcap_context(header: &[u8]) -> Result<PcapContext, Box<dyn std::error::Error>> {
+    let magic = u32::from_ne_bytes(header[0..4].try_into().unwrap());
     let (is_swapped, is_nano) = match magic {
-        0xa1b2c3d4 => (false, false), // Standard Microsecond PCAP (Native Endian)
-        0xd4c3b2a1 => (true, false),  // Standard Microsecond PCAP (Swapped Endian)
-        0xa1b23c4d => (false, true),  // Nanosecond PCAP (Native Endian)
-        0x4d3cb2a1 => (true, true),   // Nanosecond PCAP (Swapped Endian)
-
+        0xa1b2c3d4 => (false, false),
+        0xd4c3b2a1 => (true, false),
+        0xa1b23c4d => (false, true),
+        0x4d3cb2a1 => (true, true),
         _ => {
             return Err(Box::new(Error::new(
                 ErrorKind::InvalidData,
@@ -234,8 +238,7 @@ fn read_pcap_context(
         }
     };
 
-    let link_type = read_u32(&global_header[20..24], is_swapped);
-
+    let link_type = read_u32(&header[20..24], is_swapped);
     Ok(PcapContext {
         is_swapped,
         is_nano,
@@ -325,36 +328,11 @@ pub fn extract_quote(payload: &[u8]) -> Option<&[u8]> {
     Some(&payload[..QUOTE_PACKET_LENGTH])
 }
 
-/// Flushes packets from the reorder buffer that are safely outside the max delay window.
+/// Formats the raw 215-byte quote into a readable text using raw byte operations.
 ///
-/// Because network packet time (`max_time`) is assumed to be no more than 3 seconds
-/// ahead of the exchange accept time, we can output and drop any packet in the heap
-/// where `pkt_time + 3_seconds <= max_time` without risking out-of-order execution.
-fn flush_expired<F>(
-    heap: &mut BinaryHeap<Reverse<QuotePacket>>,
-    max_time: u64,
-    format_buf: &mut Vec<u8>,
-    callback: &mut F,
-) where
-    F: FnMut(&Vec<u8>),
-{
-    while let Some(Reverse(packet)) = heap.peek() {
-        if packet.pkt_time + MAX_DELAY_MICROSECONDS <= max_time {
-            let packet = heap.pop().unwrap().0;
-
-            format_output_string(packet.ts_sec, packet.ts_usec, &packet.payload, format_buf);
-            callback(format_buf);
-        } else {
-            break;
-        }
-    }
-}
-
-/// Formats the raw 215-byte quote into a readable text with a snapshot of the current
-/// orderbook.
-///
-/// Uses fixed byte-offsets to get the Issue Code, Accept Time and Bids and Asks.
-/// Uses `write!` macro into a pre-allocated string to minimize heap allocations.
+/// Takes a mutable reference to a pre-allocated `Vec<u8>` buffer. By repeatedly
+/// clearing and writing to this same buffer using `extend_from_slice`, it  eliminates 
+/// per-packet heap allocations and expensive UTF-8 validation checks.
 pub fn format_output_string(ts_sec: u32, ts_usec: u32, payload: &[u8], out: &mut Vec<u8>) {
     out.clear();
 
