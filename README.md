@@ -31,8 +31,6 @@ It is designed to consume data either directly from UDP broadcast streams on por
 
 This parser is optimized for low-latency environments. It currently uses zero-copy memory mapping (`memmap2`), pushing 8-byte slice pointers to the sliding-window Min-Heap and then formatting outbound strings dynamically via `itoa` without utilizing the `format!` macro or UTF-8 safety checks.
 
-Do I need to update these?
-
 ## Performance
 
 **Benchmark (11 GB PCAP file | 42.5M Packets | 32M Quotes)**
