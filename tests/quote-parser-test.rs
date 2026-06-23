@@ -79,14 +79,17 @@ mod tests {
 
     ////////////////////////////////////////////////////////////////////////////////////////
     // Stress tests: run with `cargo test -- --ignored` to avoid running them by default. //
+    // Create 10 GB data/test-large10g.pcap manually using:                               //
+    // mergecap -F pcap -w data/large10g.pcap \                                           //
+    // $(yes data/mdf-kospi200.20110216-0.pcap | head -200)                               //
     ////////////////////////////////////////////////////////////////////////////////////////
 
     #[test]
     #[ignore]
     fn big_file_completes_without_unbounded_output_memory() {
         let start = Instant::now();
-        let stats =
-            parse_pcap_with_stats("data/test-big1g.pcap", true, |_| {}).expect("large file failed");
+        let stats = parse_pcap_with_stats("data/test-large10g.pcap", true, |_| {})
+            .expect("large file failed");
 
         println!("processed {} quotes in {:?}", stats.quotes, start.elapsed());
         println!("maximum heap size: {}", stats.max_heap_size);
@@ -96,7 +99,7 @@ mod tests {
     #[test]
     #[ignore]
     fn reorder_buffer_size_is_reasonable() {
-        let stats = parse_pcap_with_stats("data/test-big1g.pcap", true, |_| {}).unwrap();
+        let stats = parse_pcap_with_stats("data/test-large10g.pcap", true, |_| {}).unwrap();
 
         println!("max heap size: {}", stats.max_heap_size);
         assert!(

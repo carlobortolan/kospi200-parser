@@ -11,6 +11,11 @@ repository = "https://github.com/carlobortolan/kospi200-feed-handler"
 documentation = "https://docs.rs/kospi200-feed-handler"
 homepage = "https://github.com/carlobortolan/kospi200-feed-handler"
 
+include = ["LICENSE-MIT.md", "LICENSE-APACHE.md", "src/", "tests/"]
+
+# When changing MSRV: Also update the README
+rust-version = "1.85.0"
+
 [[bin]]
 name = "parse-quote"
 path = "src/main.rs"
@@ -18,11 +23,6 @@ path = "src/main.rs"
 [dependencies]
 memmap2 = "0.9"
 itoa = "1.0"
-
-include = ["LICENSE-MIT.md", "LICENSE-APACHE.md", "src/", "tests/"]
-
-# When changing MSRV: Also update the README
-rust-version = "1.86.0"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
