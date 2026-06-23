@@ -1,4 +1,4 @@
-# Kospi200 Feed Handler
+# KOSPI 200 Feed Handler
 
 <!-- ![tests][actions-test-badge] -->
 
