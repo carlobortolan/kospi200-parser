@@ -1,4 +1,4 @@
-# KOSPI 200 Feed Handler
+# zcfh KOSPI 200 Feed Handler
 
 <!-- ![tests][actions-test-badge] -->
 
@@ -29,17 +29,17 @@ Parses and prints quote messages from a market data feed. When invoked with an `
 
 It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing pcap file. Quote packets begin with the ASCII bytes `B6034`, and contain the five current best bids and ask liquidity on the market.
 
-The parser currently uses zero-copy memory mapping (`memmap2`), pushing 8-byte slice pointers to a sliding-window Min-Heap and then formatting outbound strings dynamically via `itoa`.
+The parser currently uses zero-copy memory mapping (`memmap2`) to read network traffic. Incoming data is stored in a pre-allocated chunk of memory (arena) that sorts out-of-sequence packets by using a 3-second Min-Heap containing the indeces of the arena and their packet times.
 
 ## Performance
 
 **Benchmark (11 GB PCAP file | 42.5M Packets | 32M Quotes)**
 
-- User time (seconds): **22.24 seconds**
-- System time (seconds): **1.15 seconds**
-- Elapsed (wall clock) time: **23.61 seconds**
-- Throughput: **~465 MB/s** (Single-threaded)
-- Max application heap: **<150 KB** (for historical data) **to ~20 MB** (for 5.5M+ packet stress-test bursts); Heap size is bounded dynanically by 3-second reorder window to remain stable at $O(K)$ complexity regardless of total file size.
+- User time (seconds): **20.54 seconds**
+- System time (seconds): **0.82 seconds**
+- Elapsed (wall clock) time: **21.54 seconds**
+- Throughput: **~510 MB/s** , **1.97M PPS**(Single-threaded)
+- Max application heap: **<150 KB** (for historical data) **to ~20 MB** (for 5.5M+ packet stress-test bursts); Heap size is bounded dynanically by 3-second reorder window to remain stable at O(K) regardless of total file/input size.
 
 _Measured on a selfhosted VM with 32 GB RAM, AMD Ryzen 7 PRO 6850U @ 2.70GHz, and Manjaro Linux x86_64_
 
@@ -54,18 +54,20 @@ Prints the packet and quote accept times, the issue code, followed by the bids f
 ## Example usage:
 
 ```sh
-# 1. Compile the program:
-$ cargo build --release
+# Compile for maximum performance
+cargo build --release
 
-# 2. Run tests:
-$ cargo test
-
-# 3. Parse a pcap file:
-$ target/release/parse-quote -r data/mdf-kospi200.20110216-0.pcap
+# Parse a PCAP file with reordering
+target/release/parse-quote -r --pcap data/mdf-kospi200.20110216-0.pcap
 ...
 1297814429.998584 09002997 KR4301F32505 0000134@00092 0000199@00093 0000231@00094 0000094@00095 0000308@00096 0000234@00097 0000130@00098 0000282@00099 0000415@00100 0000052@00101
 ...
+
+# Alternatively, listen to live UDP market data feed
+target/release/parse-quote -r --udp 239.0.0.1:15515
+
 ```
+
 
 The handler assumes that the difference between the quote accept time and the pcap packet time is never more than 3 seconds.
 
