@@ -6,19 +6,25 @@
 [![Crate][crates-badge]][crates-url]
 [![docs.rs][docsrs-badge]][docs-url]
 ![Crates.io MSRV][crates-msrv-badge]
+
 <!--[![codecov-kospi200-parser][codecov-badge]][codecov-url]-->
 <!--![Crates.io downloads][crates-download-badge] -->
 
 <!--[actions-test-badge]: https://github.com/carlobortolan/kospi200-parser/actions/workflows/ci.yml/badge.svg -->
+
 [license-badge]: https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg
 [crates-badge]: https://img.shields.io/crates/v/kospi200-parser.svg
 [crates-url]: https://crates.io/crates/kospi200-parser
 [docsrs-badge]: https://img.shields.io/docsrs/kospi200-parser
-[docs-url]: https://docs.rs/kospi200-parser/*/kospi200-parser
+[docs-url]: https://docs.rs/kospi200-parser
+
 <!--[codecov-badge]: https://codecov.io/gh/carlobortolan/kospi200-parser/graph/badge.svg?token=NJ4HW3OQFY
 [codecov-url]: https://codecov.io/gh/carlobortolan/kospi200-parser -->
+
 [crates-msrv-badge]: https://img.shields.io/crates/msrv/kospi200-parser
+
 <!--[crates-download-badge]: https://img.shields.io/crates/d/kospi200-parser -->
+
 [license-badge]: https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg
 
 Parses and prints quote messages from a historical KOSPI 200 market data feed. When invoked with an `-r` flag, the program re-orders the messages according to the quote accept time at the exchange.
@@ -34,8 +40,8 @@ The parser currently uses zero-copy memory mapping (`memmap2`) to read network t
 - User time (seconds): **20.54 seconds**
 - System time (seconds): **0.82 seconds**
 - Elapsed (wall clock) time: **21.54 seconds**
-- Throughput: **~510 MB/s** , **1.97M PPS**(Single-threaded)
-- Max application heap: **<150 KB** (for historical data) **to ~20 MB** (for 5.5M+ packet stress-test bursts); Heap size is bounded dynamically by 3-second reorder window to remain stable at O(K) regardless of total file/input size.
+- Throughput: **~510 MB/s**, **1.97M PPS** (Single-threaded).
+- Max application heap: **~256 MB fixed pre-allocation**. The object pool (arena) is initialized for 1,000,000 concurrent packets to remain stable at O(K) regardless of total file/input size.
 
 _Measured on a selfhosted VM with 32 GB RAM, AMD Ryzen 7 PRO 6850U @ 2.70GHz, and Manjaro Linux x86_64_
 
