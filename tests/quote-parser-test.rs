@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use kospi200_feed_handler::kospi::{HeapItem, KospiHandler, QuoteData};
-    use kospi200_feed_handler::sources::run_pcap_source;
+    use kospi200_parser::kospi::{HeapItem, KospiHandler, QuoteData};
+    use kospi200_parser::sources::run_pcap_source;
     use std::fs;
     use std::time::Instant;
 

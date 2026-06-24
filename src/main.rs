@@ -1,5 +1,5 @@
-use kospi200_feed_handler::kospi::KospiHandler;
-use kospi200_feed_handler::sources::{run_pcap_source, run_udp_source};
+use kospi200_parser::kospi::KospiHandler;
+use kospi200_parser::sources::{run_pcap_source, run_udp_source};
 use std::env;
 use std::io::BufWriter;
 

@@ -1,4 +1,4 @@
-# zcfh KOSPI 200 Feed Handler
+# KOSPI 200 Parser
 
 <!-- ![tests][actions-test-badge] -->
 
@@ -7,27 +7,27 @@
 <!--
 [![Crate][crates-badge]][crates-url]
 [![docs.rs][docsrs-badge]][docs-url]
-[![codecov-kospi200-feed-handler][codecov-badge]][codecov-url]
+[![codecov-kospi200-parser][codecov-badge]][codecov-url]
 ![Crates.io MSRV][crates-msrv-badge]
 ![Crates.io downloads][crates-download-badge]
 
-[actions-test-badge]: https://github.com/carlobortolan/kospi200-feed-handler/actions/workflows/ci.yml/badge.svg
-[crates-badge]: https://img.shields.io/crates/v/kospi200-feed-handler.svg
-[crates-url]: https://crates.io/crates/kospi200-feed-handler
+[actions-test-badge]: https://github.com/carlobortolan/kospi200-parser/actions/workflows/ci.yml/badge.svg
+[crates-badge]: https://img.shields.io/crates/v/kospi200-parser.svg
+[crates-url]: https://crates.io/crates/kospi200-parser
 [license-badge]: https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg
-[docsrs-badge]: https://img.shields.io/docsrs/kospi200-feed-handler
-[docs-url]: https://docs.rs/kospi200-feed-handler/*/kospi200-feed-handler
-[codecov-badge]: https://codecov.io/gh/carlobortolan/kospi200-feed-handler/graph/badge.svg?token=NJ4HW3OQFY
-[codecov-url]: https://codecov.io/gh/carlobortolan/kospi200-feed-handler
-[crates-msrv-badge]: https://img.shields.io/crates/msrv/kospi200-feed-handler
-[crates-download-badge]: https://img.shields.io/crates/d/kospi200-feed-handler
+[docsrs-badge]: https://img.shields.io/docsrs/kospi200-parser
+[docs-url]: https://docs.rs/kospi200-parser/*/kospi200-parser
+[codecov-badge]: https://codecov.io/gh/carlobortolan/kospi200-parser/graph/badge.svg?token=NJ4HW3OQFY
+[codecov-url]: https://codecov.io/gh/carlobortolan/kospi200-parser
+[crates-msrv-badge]: https://img.shields.io/crates/msrv/kospi200-parser
+[crates-download-badge]: https://img.shields.io/crates/d/kospi200-parser
 -->
 
 [license-badge]: https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg
 
 Parses and prints quote messages from a historical KOSPI 200 market data feed. When invoked with an `-r` flag, the program re-orders the messages according to the quote accept time at the exchange.
 
-It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing pcap file. Quote packets begin with the ASCII bytes `B6034`, and contain the five current best bids and ask liquidity on the market.
+It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing PCAP file. Quote packets begin with the ASCII bytes `B6034`, and contain the five current best bids and ask liquidity on the market.
 
 The parser currently uses zero-copy memory mapping (`memmap2`) to read network traffic. Incoming data is stored in a pre-allocated chunk of memory (arena) that sorts out-of-sequence packets by using a 3-second Min-Heap containing the indeces of the arena and their packet times.
 
@@ -68,8 +68,7 @@ target/release/parse-quote -r --udp 239.0.0.1:15515
 
 ```
 
-
-The handler assumes that the difference between the quote accept time and the pcap packet time is never more than 3 seconds.
+The handler assumes that the difference between the quote accept time and the PCAP packet time is never more than 3 seconds.
 
 ## Minimum supported Rust version (MSRV)
 
