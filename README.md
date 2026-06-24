@@ -25,7 +25,7 @@
 
 [license-badge]: https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg
 
-Parses and prints quote messages from a market data feed. When invoked with an `-r` flag, the program re-orders the messages according to the quote accept time at the exchange.
+Parses and prints quote messages from a historical KOSPI 200 market data feed. When invoked with an `-r` flag, the program re-orders the messages according to the quote accept time at the exchange.
 
 It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing pcap file. Quote packets begin with the ASCII bytes `B6034`, and contain the five current best bids and ask liquidity on the market.
 
