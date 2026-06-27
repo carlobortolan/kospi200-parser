@@ -26,3 +26,5 @@ target
 /target
 /data/test-*
 /data/shifted*
+
+/.cargo/config.toml
