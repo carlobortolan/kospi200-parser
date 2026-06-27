@@ -24,6 +24,13 @@ path = "src/main.rs"
 memmap2 = "0.9"
 itoa = "1.0"
 
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "kospi"
+harness = false
+
 [lints.rust.unexpected_cfgs]
 level = "warn"
 # Set by cargo-llvm-cov when running on nightly
@@ -32,3 +39,9 @@ check-cfg = ['cfg(coverage_nightly)']
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.bench]
+debug = true
+
+[profile.release]
+debug = true
