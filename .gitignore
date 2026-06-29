@@ -28,3 +28,7 @@ target
 /data/shifted*
 
 /.cargo/config.toml
+
+# Profiling data
+perf.data
+perf.data.old

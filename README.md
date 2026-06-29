@@ -33,15 +33,31 @@ It is designed to consume data either directly from UDP broadcast streams on por
 
 The parser currently uses zero-copy memory mapping (`memmap2`) to read network traffic. Incoming data is stored in a pre-allocated chunk of memory (arena) that sorts out-of-sequence packets by using a 3-second Min-Heap containing the indices of the arena and their packet times.
 
+The heap is sorted by exchange time (quote accept time), but the sliding window evicts based on network time.
+
 ## Performance
 
-**Benchmark (11 GB PCAP file | 42.5M Packets | 32M Quotes)**
+#### Macro-Benchmark (end-to-end execution; 10.5 GB PCAP file | 38M Packets | 28.8M Quotes)
 
-- User time (seconds): **20.54 seconds**
-- System time (seconds): **0.82 seconds**
-- Elapsed (wall clock) time: **21.54 seconds**
-- Throughput: **~510 MB/s**, **1.97M PPS** (Single-threaded).
-- Max application heap: **~256 MB fixed pre-allocation**. The object pool (arena) is initialized for 1,000,000 concurrent packets to remain stable at O(K) regardless of total file/input size.
+- User time (seconds): 8.16 seconds
+- System time (seconds): 0.46 seconds
+- Elapsed (wall clock) time: 8.68 seconds
+- Throughput: **~1.2 GB/s**, **4.4M PPS / ~227 ns per packet** (Single-threaded)
+- Max application heap: **~256 MB initial pre-allocation** (see [calculation](benches/README.md#The-Math-Behind-the-~256-MB))
+
+#### Micro-Benchmark (isolated execution measured with criterion)
+
+A packet is processed in **~209 ns per packet**; roughly 4.8 million PPS sequentially on a single thread.
+
+![on_packet Micro-Benchmark](benches/kospi_on_packet.png)
+
+<!-- ![on_packet Micro-Benchmark](benches/kospi_run_pcap_source.png) -->
+
+#### CPU Profiling
+
+The flamegraph confirms that once the fixed-size arena and heap are initialized, the parser spends its CPU cycles entirely on structural heap sifting (`sift_down_to_bottom`) and raw byte formatting (`copy_nonoverlapping`) and not on memory allocator at runtime.
+
+![CPU Flamegraph](benches/flamegraph.svg)
 
 _Measured on a selfhosted VM with 32 GB RAM, AMD Ryzen 7 PRO 6850U @ 2.70GHz, and Manjaro Linux x86_64_
 
