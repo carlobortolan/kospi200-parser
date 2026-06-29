@@ -29,7 +29,7 @@
 
 Parses and prints quote messages from a historical KOSPI 200 market data feed. When invoked with an `-r` flag, the program re-orders the messages according to the quote accept time at the exchange.
 
-It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing PCAP file. Quote packets begin with the ASCII bytes `B6034`, and contain the five current best bids and ask liquidity on the market.
+It is designed to consume data either directly from UDP broadcast streams on ports 15515/15516 or by replaying an existing PCAP file. Quote packets begin with the ASCII bytes `B6034` and contain the five current best bids and ask liquidity on the market.
 
 The parser currently uses zero-copy memory mapping (`memmap2`) to read network traffic. Incoming data is stored in a pre-allocated chunk of memory (arena) that sorts out-of-sequence packets by using a 3-second Min-Heap containing the indices of the arena and their packet times.
 
@@ -59,7 +59,7 @@ The flamegraph confirms that once the fixed-size arena and heap are initialized,
 
 ![CPU Flamegraph](benches/flamegraph.svg)
 
-_Measured on a selfhosted VM with 32 GB RAM, AMD Ryzen 7 PRO 6850U @ 2.70GHz, and Manjaro Linux x86_64_
+_Measured on a selfhosted VM with 32 GB RAM, AMD Ryzen 7 PRO 6850U @ 2.70GHz and Manjaro Linux x86_64_
 
 ## Output format:
 

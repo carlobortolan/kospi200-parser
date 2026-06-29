@@ -1,23 +1,14 @@
 ### Create a large PCAP file
 
 ```sh
-# Create 1G file
-mergecap -F pcap -w data/test-medium1g.pcap \
-$(yes data/mdf-kospi200.20110216-0.pcap | head -200)
-
-# Create 10G file
-mergecap -w data/test-large10g.pcap \
-$(for i in $(seq 0 9); do
-    editcap -t $((i * 30)) data/test-medium1g.pcap data/shifted$i.pcap
-    echo data/shifted$i.pcap
-done)
+cargo run --release --bin generate_10g
 ```
 
 ### Test with large file
 
 ```sh
 # Run with a large file
-ls -lh data/test-medium1g.pcap
+ls -lh data/test-large10g.pcap
 /usr/bin/time -v target/release/parse-quote -r data/test-large10g.pcap > /dev/null
 
 # Run tests including ignored large-file tests

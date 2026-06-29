@@ -247,7 +247,7 @@ impl KospiHandler {
         format_buf.extend_from_slice(&b"000000"[..pad_len]); // Pad
         format_buf.extend_from_slice(usec_bytes); // Digits
         format_buf.push(b' '); // Space delimiter
-                
+
         // 2. Blit the Accept Time and Issue Code raw bytes
         format_buf.extend_from_slice(&payload[206..214]);
         format_buf.push(b' ');
