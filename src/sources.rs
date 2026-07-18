@@ -80,11 +80,10 @@ where
 /// layer headers, this function directly yields the application payload to the callback.
 pub fn run_udp_source<F>(addr: &str, mut callback: F) -> Result<(), Box<dyn std::error::Error>>
 where
-    F: FnMut(u32, u32, &[u8]),
+    F: FnMut(u32, u32, &[u8]) -> bool,
 {
     let socket = UdpSocket::bind(addr)?;
 
-    // If multicast IP (e.g., 239.0.0.1), join the group
     let ip: std::net::IpAddr = addr.split(':').next().unwrap().parse()?;
     if ip.is_multicast() {
         if let std::net::IpAddr::V4(ipv4) = ip {
@@ -92,18 +91,21 @@ where
         }
     }
 
-    let mut buf = [0u8; 65536]; // Max UDP packet size (64 KB)
+    let mut buf = [0u8; 65536];
 
     loop {
         let (len, _src) = socket.recv_from(&mut buf)?;
 
-        // UDP Packet arrival time
         let now: std::time::Duration = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
         let ts_sec = now.as_secs() as u32;
         let ts_usec = now.subsec_micros();
 
-        callback(ts_sec, ts_usec, &buf[..len]);
+        if !callback(ts_sec, ts_usec, &buf[..len]) {
+            break;
+        }
     }
+
+    Ok(())
 }
 
 /// Parses the 24-byte PCAP global header.
