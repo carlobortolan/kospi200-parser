@@ -14,3 +14,4 @@ coverage:
         enabled: yes
 ignore:
   - "src/bin/generate_10g.rs"
+  - "src/bin/udp_replay.rs"

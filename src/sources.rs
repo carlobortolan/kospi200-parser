@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Error, ErrorKind};
-use std::net::UdpSocket;
-use std::time::SystemTime;
+use std::net::{IpAddr, Ipv4Addr, UdpSocket};
+use std::time::{Duration, SystemTime};
 
 const MAX_CAPTURE_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 const TARGET_PORTS: [u16; 2] = [15515, 15516]; // Specified UDP broadcast ports for the market data feed/// Global metadata for the parsed PCAP file.
@@ -85,25 +85,39 @@ where
     let socket = UdpSocket::bind(addr)?;
 
     // If multicast IP (e.g., 239.0.0.1), join the group
-    let ip: std::net::IpAddr = addr.split(':').next().unwrap().parse()?;
+    let ip: IpAddr = addr.split(':').next().unwrap().parse()?;
     if ip.is_multicast() {
-        if let std::net::IpAddr::V4(ipv4) = ip {
-            socket.join_multicast_v4(&ipv4, &std::net::Ipv4Addr::UNSPECIFIED)?;
+        if let IpAddr::V4(ipv4) = ip {
+            socket.join_multicast_v4(&ipv4, &Ipv4Addr::UNSPECIFIED)?;
         }
     }
+
+    // Set 10-second timeout
+    socket.set_read_timeout(Some(Duration::from_secs(10)))?;
 
     let mut buf = [0u8; 65536]; // Max UDP packet size (64 KB)
 
     loop {
-        let (len, _src) = socket.recv_from(&mut buf)?;
+        match socket.recv_from(&mut buf) {
+            Ok((len, _src)) => {
+                // UDP Packet arrival time (vDSO)
+                let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+                let ts_sec = now.as_secs() as u32;
+                let ts_usec = now.subsec_micros();
 
-        // UDP Packet arrival time
-        let now: std::time::Duration = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-        let ts_sec = now.as_secs() as u32;
-        let ts_usec = now.subsec_micros();
-
-        if !callback(ts_sec, ts_usec, &buf[..len]) {
-            break;
+                if !callback(ts_sec, ts_usec, &buf[..len]) {
+                    break;
+                }
+            }
+            Err(e) => {
+                // Timeout
+                if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut {
+                    eprintln!("UDP feed timeout reached (End of Stream).");
+                    break;
+                }
+                // Network error
+                return Err(e.into());
+            }
         }
     }
 
