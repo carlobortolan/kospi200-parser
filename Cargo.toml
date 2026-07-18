@@ -1,15 +1,20 @@
 [package]
-name = "kospi200-feed-handler"
-version = "0.1.0"
+name = "kospi200-parser"
+version = "0.1.2"
 edition = "2024"
 authors = ["Carlo Bortolan <carlobortolan@gmail.com>"]
-description = " Zero-allocation PCAP quote parser for Kospi 200 market data feeds."
+description = "Zero-allocation PCAP/UDP quote parser for KOSPI 200 market data feeds. "
 license = "MIT OR Apache-2.0"
 keywords = ["pcap", "kospi200", "hft", "udp", "trading"]
 categories = ["finance", "network-programming", "parser-implementations", "simulation"]
-repository = "https://github.com/carlobortolan/kospi200-feed-handler"
-documentation = "https://docs.rs/kospi200-feed-handler"
-homepage = "https://github.com/carlobortolan/kospi200-feed-handler"
+repository = "https://github.com/carlobortolan/kospi200-parser"
+documentation = "https://docs.rs/kospi200-parser"
+homepage = "https://github.com/carlobortolan/kospi200-parser"
+
+include = ["LICENSE-MIT.md", "LICENSE-APACHE.md", "src/", "tests/"]
+
+# When changing MSRV: Also update the README
+rust-version = "1.86.0"
 
 [[bin]]
 name = "parse-quote"
@@ -19,10 +24,12 @@ path = "src/main.rs"
 memmap2 = "0.9"
 itoa = "1.0"
 
-include = ["LICENSE-MIT.md", "LICENSE-APACHE.md", "src/", "tests/"]
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
-# When changing MSRV: Also update the README
-rust-version = "1.86.0"
+[[bench]]
+name = "kospi"
+harness = false
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
@@ -32,3 +39,9 @@ check-cfg = ['cfg(coverage_nightly)']
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.bench]
+debug = true
+
+[profile.release]
+debug = true

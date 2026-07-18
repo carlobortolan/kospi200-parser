@@ -24,3 +24,11 @@ target
 # Added by cargo
 
 /target
+/data/test-*
+/data/shifted*
+
+/.cargo/config.toml
+
+# Profiling data
+perf.data
+perf.data.old
