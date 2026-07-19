@@ -56,13 +56,79 @@ impl PartialOrd for HeapItem {
 /// to prevent fragmented heap allocations. Total size: 224 bytes.
 pub struct QuoteData {
     /// 4-byte cached network timestamp (seconds) used for final string formatting.
-    ts_sec: u32,
+    pub ts_sec: u32,
 
     /// 4-byte cached network timestamp (μs) used for final string formatting.
-    ts_usec: u32,
+    pub ts_usec: u32,
 
     /// 215-byte application data.
-    payload: [u8; QUOTE_PACKET_LENGTH],
+    pub payload: [u8; QUOTE_PACKET_LENGTH],
+}
+
+impl QuoteData {
+    /// Formats the raw 215-byte quote into a readable text using raw byte operations.
+    ///
+    /// Takes a mutable reference to a pre-allocated `Vec<u8>` buffer. By repeatedly
+    /// clearing and writing to this same buffer using `extend_from_slice`, it eliminates
+    /// per-packet heap allocations and expensive UTF-8 validation checks.
+    pub fn format_and_write(&self, format_buf: &mut Vec<u8>, out: &mut impl Write) {
+        format_buf.clear();
+
+        // 1. Write the Unix epoch timestamps using itoa
+        let mut num_buf = itoa::Buffer::new();
+
+        // Write seconds
+        format_buf.extend_from_slice(num_buf.format(self.ts_sec).as_bytes());
+        format_buf.push(b'.');
+
+        // Write microseconds with branchless zero-padding
+        let usec_bytes = num_buf.format(self.ts_usec).as_bytes();
+        let pad_len = 6usize.saturating_sub(usec_bytes.len());
+
+        format_buf.extend_from_slice(&b"000000"[..pad_len]); // Pad
+        format_buf.extend_from_slice(usec_bytes); // Digits
+        format_buf.push(b' '); // Space delimiter
+
+        // 2. Blit the Accept Time and Issue Code raw bytes
+        format_buf.extend_from_slice(&self.payload[206..214]);
+        format_buf.push(b' ');
+        format_buf.extend_from_slice(&self.payload[5..17]);
+
+        // 3. Bids: 5th to 1st
+        let bid_offsets = [
+            (77, 82, 82, 89), // 5th
+            (65, 70, 70, 77), // 4th
+            (53, 58, 58, 65), // 3rd
+            (41, 46, 46, 53), // 2nd
+            (29, 34, 34, 41), // 1st
+        ];
+
+        for &(ps, pe, qs, qe) in &bid_offsets {
+            format_buf.push(b' ');
+            format_buf.extend_from_slice(&self.payload[qs..qe]); // qty bytes
+            format_buf.push(b'@');
+            format_buf.extend_from_slice(&self.payload[ps..pe]); // price bytes
+        }
+
+        // 4. Asks: 1st to 5th
+        let ask_offsets = [
+            (96, 101, 101, 108),  // 1st
+            (108, 113, 113, 120), // 2nd
+            (120, 125, 125, 132), // 3rd
+            (132, 137, 137, 144), // 4th
+            (144, 149, 149, 156), // 5th
+        ];
+
+        for &(ps, pe, qs, qe) in &ask_offsets {
+            format_buf.push(b' ');
+            format_buf.extend_from_slice(&self.payload[qs..qe]); // qty bytes
+            format_buf.push(b'@');
+            format_buf.extend_from_slice(&self.payload[ps..pe]); // price bytes
+        }
+
+        format_buf.push(b'\n');
+        out.write_all(format_buf).unwrap();
+    }
 }
 
 /// Stateful parser and reorder buffer for the KOSPI 200 market data feed.
@@ -91,10 +157,6 @@ pub struct KospiHandler {
 
     /// Peak number of packets held concurrently in the sliding window.
     pub max_heap_size: usize,
-
-    /// Buffer to batch I/O string formatting, preventing repeated syscalls
-    /// to the underlying `StdoutLock`.
-    format_buf: Vec<u8>,
 }
 
 impl KospiHandler {
@@ -108,7 +170,6 @@ impl KospiHandler {
             max_time: 0,
             quotes_parsed: 0,
             max_heap_size: 0,
-            format_buf: Vec::with_capacity(256), // Final output string of a single KOSPI quote ~180 chars
         }
     }
 
@@ -116,13 +177,10 @@ impl KospiHandler {
     ///
     /// Validates the magic bytes, manages the slab allocator memory mapping,
     /// and flushes expired packets that fall outside the 3-second sliding window.
-    pub fn on_packet(
-        &mut self,
-        ts_sec: u32,
-        ts_usec: u32,
-        payload: &[u8],
-        output: &mut impl Write,
-    ) {
+    pub fn on_packet<F>(&mut self, ts_sec: u32, ts_usec: u32, payload: &[u8], mut on_quote: F)
+    where
+        F: FnMut(&QuoteData),
+    {
         if payload.len() < QUOTE_PACKET_LENGTH || &payload[..5] != QUOTE_PACKET_MAGIC {
             return; // Not a valid KOSPI Quote
         }
@@ -132,13 +190,14 @@ impl KospiHandler {
         self.max_time = self.max_time.max(pkt_time);
 
         if !self.reorder {
-            Self::format_and_write(
-                &mut self.format_buf,
+            let mut payload_arr = [0u8; QUOTE_PACKET_LENGTH];
+            payload_arr.copy_from_slice(&payload[..QUOTE_PACKET_LENGTH]);
+
+            on_quote(&QuoteData {
                 ts_sec,
                 ts_usec,
-                &payload[..QUOTE_PACKET_LENGTH],
-                output,
-            );
+                payload: payload_arr,
+            });
             return;
         }
 
@@ -187,13 +246,7 @@ impl KospiHandler {
 
                 // Read from the arena using the integer ID
                 let data = &self.arena[item.arena_idx as usize];
-                Self::format_and_write(
-                    &mut self.format_buf,
-                    data.ts_sec,
-                    data.ts_usec,
-                    &data.payload,
-                    output,
-                );
+                on_quote(data);
 
                 // After packet is printed, it is no longer needed in the arena.
                 // Return the slot to the free list so it can be overwritten.
@@ -205,87 +258,14 @@ impl KospiHandler {
     }
 
     /// Flushes any remaining packets in the heap when the stream ends.
-    pub fn flush_all(&mut self, output: &mut impl Write) {
+    pub fn flush_all<F>(&mut self, mut on_quote: F)
+    where
+        F: FnMut(&QuoteData),
+    {
         while let Some(Reverse(item)) = self.heap.pop() {
             let data = &self.arena[item.arena_idx as usize];
-            Self::format_and_write(
-                &mut self.format_buf,
-                data.ts_sec,
-                data.ts_usec,
-                &data.payload,
-                output,
-            );
+            on_quote(data);
             // No need to push to free_list here, since we are shutting down.
         }
-    }
-
-    /// Formats the raw 215-byte quote into a readable text using raw byte operations.
-    ///
-    /// Takes a mutable reference to a pre-allocated `Vec<u8>` buffer. By repeatedly
-    /// clearing and writing to this same buffer using `extend_from_slice`, it eliminates
-    /// per-packet heap allocations and expensive UTF-8 validation checks.
-    fn format_and_write(
-        format_buf: &mut Vec<u8>,
-        ts_sec: u32,
-        ts_usec: u32,
-        payload: &[u8],
-        out: &mut impl Write,
-    ) {
-        format_buf.clear();
-
-        // 1. Write the Unix epoch timestamps using itoa
-        let mut num_buf = itoa::Buffer::new();
-
-        // Write seconds
-        format_buf.extend_from_slice(num_buf.format(ts_sec).as_bytes());
-        format_buf.push(b'.');
-
-        // Write microseconds with branchless zero-padding
-        let usec_bytes = num_buf.format(ts_usec).as_bytes();
-        let pad_len = 6usize.saturating_sub(usec_bytes.len());
-
-        format_buf.extend_from_slice(&b"000000"[..pad_len]); // Pad
-        format_buf.extend_from_slice(usec_bytes); // Digits
-        format_buf.push(b' '); // Space delimiter
-
-        // 2. Blit the Accept Time and Issue Code raw bytes
-        format_buf.extend_from_slice(&payload[206..214]);
-        format_buf.push(b' ');
-        format_buf.extend_from_slice(&payload[5..17]);
-
-        // 3. Bids: 5th to 1st
-        let bid_offsets = [
-            (77, 82, 82, 89), // 5th
-            (65, 70, 70, 77), // 4th
-            (53, 58, 58, 65), // 3rd
-            (41, 46, 46, 53), // 2nd
-            (29, 34, 34, 41), // 1st
-        ];
-
-        for &(ps, pe, qs, qe) in &bid_offsets {
-            format_buf.push(b' ');
-            format_buf.extend_from_slice(&payload[qs..qe]); // qty bytes
-            format_buf.push(b'@');
-            format_buf.extend_from_slice(&payload[ps..pe]); // price bytes
-        }
-
-        // 4. Asks: 1st to 5th
-        let ask_offsets = [
-            (96, 101, 101, 108),  // 1st
-            (108, 113, 113, 120), // 2nd
-            (120, 125, 125, 132), // 3rd
-            (132, 137, 137, 144), // 4th
-            (144, 149, 149, 156), // 5th
-        ];
-
-        for &(ps, pe, qs, qe) in &ask_offsets {
-            format_buf.push(b' ');
-            format_buf.extend_from_slice(&payload[qs..qe]); // qty bytes
-            format_buf.push(b'@');
-            format_buf.extend_from_slice(&payload[ps..pe]); // price bytes
-        }
-
-        format_buf.push(b'\n');
-        out.write_all(format_buf).unwrap();
     }
 }

@@ -9,18 +9,21 @@ mod tests {
     // Test Helpers for the new API.    //
     //////////////////////////////////////
 
-    /// Replicates the old `parse_pcap` by streaming the source into the handler
-    /// and capturing the byte output into a Vec of Strings.
     fn parse_to_output(filename: &str, reorder: bool) -> (Vec<String>, KospiHandler) {
         let mut handler = KospiHandler::new(reorder);
         let mut output_bytes = Vec::new();
+        let mut format_buf = Vec::with_capacity(256);
 
         run_pcap_source(filename, |sec, usec, payload| {
-            handler.on_packet(sec, usec, payload, &mut output_bytes);
+            handler.on_packet(sec, usec, payload, |quote| {
+                quote.format_and_write(&mut format_buf, &mut output_bytes);
+            });
         })
         .expect("PCAP source failed");
 
-        handler.flush_all(&mut output_bytes);
+        handler.flush_all(|quote| {
+            quote.format_and_write(&mut format_buf, &mut output_bytes);
+        });
 
         let lines = String::from_utf8_lossy(&output_bytes)
             .lines()
@@ -38,10 +41,11 @@ mod tests {
     fn test_extract_quote_and_format() {
         let mut handler = KospiHandler::new(false);
         let mut output = Vec::new();
+        let mut format_buf = Vec::new();
 
         // 1. Fake payload that is too short
         let short_payload = vec![0u8; 100];
-        handler.on_packet(1297846801, 123456, &short_payload, &mut output);
+        handler.on_packet(1297846801, 123456, &short_payload, |_| {});
         assert_eq!(handler.quotes_parsed, 0, "Should ignore short packets");
 
         // 2. Valid payload with Magic Bytes
@@ -50,7 +54,9 @@ mod tests {
         payload[5..17].copy_from_slice(b"KR7005930003"); // Mock Issue Code
         payload[206..214].copy_from_slice(b"09000123"); // Mock Accept Time
 
-        handler.on_packet(1297846801, 123456, &payload, &mut output);
+        handler.on_packet(1297846801, 123456, &payload, |quote| {
+            quote.format_and_write(&mut format_buf, &mut output);
+        });
         assert_eq!(handler.quotes_parsed, 1, "Should parse valid quote");
 
         // Convert the bytes back to string for assert
@@ -129,12 +135,13 @@ mod tests {
     fn big_file_completes_without_unbounded_output_memory() {
         let start = Instant::now();
         let mut handler = KospiHandler::new(true);
-        let mut dummy_out = std::io::sink(); // Ignore string output for speed
 
         run_pcap_source("data/test-large10g.pcap", |sec, usec, payload| {
-            handler.on_packet(sec, usec, payload, &mut dummy_out);
+            handler.on_packet(sec, usec, payload, |_| {}); // No-op output
         })
         .expect("large file failed");
+
+        handler.flush_all(|_| {}); // No-op flush
 
         println!(
             "processed {} quotes in {:?}",
@@ -149,12 +156,13 @@ mod tests {
     #[ignore]
     fn reorder_buffer_size_is_reasonable() {
         let mut handler = KospiHandler::new(true);
-        let mut dummy_out = std::io::sink();
 
         run_pcap_source("data/test-large10g.pcap", |sec, usec, payload| {
-            handler.on_packet(sec, usec, payload, &mut dummy_out);
+            handler.on_packet(sec, usec, payload, |_| {});
         })
         .unwrap();
+
+        handler.flush_all(|_| {});
 
         println!("max heap size: {}", handler.max_heap_size);
         assert!(

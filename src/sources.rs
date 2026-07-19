@@ -168,9 +168,9 @@ fn read_u32(data: &[u8], swapped: bool) -> u32 {
 fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
     // L1: Data Link Layer
     let mut offset = match link_type {
-        1 => 14, // Ethernet header = 6 bytes Destination MAC + 6 bytes Source MAC + 2 bytes EtherType
+        1 => 14,   // Ethernet header = 6 (Destination MAC) + 6 (Source MAC) + 2 (EtherType)
         113 => 16, // Linux cooked capture
-        12 => 0, // Raw IP
+        12 => 0,   // Raw IP
         _ => return None,
     };
 
@@ -198,7 +198,7 @@ fn extract_udp_payload(packet: &[u8], link_type: u32) -> Option<&[u8]> {
     let udp_offset = offset + ip_header_len;
 
     // L3: Transport Layer
-    // UDP Header = 2 bytes Source Port + 2 bytes Destination Port + 2 bytes Length + 2 bytes Checksum
+    // UDP Header = 2 (Source Port) + 2 (Destination Port) + 2 (Length) + 2 (Checksum)
     if packet.len() < udp_offset + 8 {
         return None;
     }

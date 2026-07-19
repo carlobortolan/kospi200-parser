@@ -62,24 +62,38 @@ Prints the packet and quote accept times, the issue code, followed by the bids f
 <pkt-time> <accept-time> <issue-code> <bqty5>@<bprice5> ... <bqty1>@<bprice1> <aqty1>@<aprice1> ... <aqty5>@<aprice5>
 ```
 
-## Example usage:
+## Usage
 
 ```sh
-# Compile for maximum performance
+./target/release/parse-quote [-r] [--benchmark | --forward <ip:port>] [--pcap <file.pcap> | --udp <ip:port>]
+```
+
+| Option                | Description                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `-r`                  | Enable reordering                                                                     |
+| `--benchmark`         | Benchmark parser performance instead of printing parsed output.                       |
+| `--forward <ip:port>` | Forward parsed quote messages to the specified UDP endpoint. Doesn't print to stdout. |
+| `--pcap <file.pcap>`  | Read packets from a PCAP file.                                                        |
+| `--udp <ip:port>`     | Listen for UDP packets on the specified address and port.                             |
+
+#### Notes
+
+- Exactly one input source must be specified: `--pcap` or `--udp`.
+- If neither `--benchmark` nor `--forward` is specified, parsed messages are written to standard output.
+- The handler assumes that the difference between the quote accept time and the PCAP packet time is never more than 3 seconds.
+
+#### Example Usage
+
+```sh
+# Build project in release mode
 cargo build --release
 
-# Parse a PCAP file with reordering
-target/release/parse-quote -r --pcap data/mdf-kospi200.20110216-0.pcap
+# Parse a PCAP file with reordering and output to stdout
+./target/release/parse-quote -r --pcap data/mdf-kospi200.20110216-0.pcap
 ...
 1297814429.998584 09002997 KR4301F32505 0000134@00092 0000199@00093 0000231@00094 0000094@00095 0000308@00096 0000234@00097 0000130@00098 0000282@00099 0000415@00100 0000052@00101
 ...
-
-# Alternatively start up UDP sender and listen to live UDP market data feed
-cargo run --release --bin parse-quote -- -r --udp 127.0.0.1:15515
-target/release/parse-quote -r --udp 239.0.0.1:15515
 ```
-
-The handler assumes that the difference between the quote accept time and the PCAP packet time is never more than 3 seconds.
 
 ## Minimum supported Rust version (MSRV)
 
