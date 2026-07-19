@@ -85,6 +85,9 @@ Prints the packet and quote accept times, the issue code, followed by the bids f
 #### Example Usage
 
 ```sh
+# Build project in release mode
+cargo build --release
+
 # Parse a PCAP file with reordering and output to stdout
 ./target/release/parse-quote -r --pcap data/mdf-kospi200.20110216-0.pcap
 ...
