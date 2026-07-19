@@ -71,10 +71,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--pcap" => {
                 source = Some(DataSource::Pcap(
-                    args.next().expect("Missing PCAP filename [--pcap <file.pcap>]"),
+                    args.next()
+                        .expect("Missing PCAP filename [--pcap <file.pcap>]"),
                 ))
             }
-            "--udp" => source = Some(DataSource::Udp(args.next().expect("Missing UDP IP:Port [--udp <ip:port>]"))),
+            "--udp" => {
+                source = Some(DataSource::Udp(
+                    args.next().expect("Missing UDP IP:Port [--udp <ip:port>]"),
+                ))
+            }
             _ => {
                 eprintln!(
                     "Usage: {} [-r] [--benchmark | --forward <ip:port>] [--pcap <file.pcap> | --udp <ip:port>]",
