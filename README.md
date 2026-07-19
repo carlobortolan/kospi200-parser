@@ -32,9 +32,9 @@ The heap is sorted by exchange time (quote accept time), but the sliding window 
 
 #### Macro-Benchmark (end-to-end execution; 10.5 GB PCAP file | 38M Packets | 28.8M Quotes)
 
-- User time (seconds): 3.51 seconds
-- System time (seconds): 0.68 seconds
-- Elapsed (wall clock) time: 4.22 seconds
+- User time (seconds): 3.48 seconds
+- System time (seconds): 0.67 seconds
+- Elapsed (wall clock) time: 4.20 seconds
 - Throughput: **~2.5 GB/s**, **9M PPS / ~111 ns per packet** (single-threaded)
 - Max application heap: **~256 MB initial pre-allocation** (see [calculation](benches/README.md#the-math-behind-the-256-mb))
 
