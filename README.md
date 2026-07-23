@@ -42,9 +42,7 @@ The heap is sorted by exchange time (quote accept time), but the sliding window 
 
 A single packet is processed in **~83 ns per packet**; roughly 12 million PPS sequentially on a single thread.
 
-<img width="3178" height="852" alt="merged-image-1784825715197" src="https://github.com/user-attachments/assets/94ce1005-17cb-40be-817f-86444697b7ee" />
-
-<!--![on_packet Micro-Benchmark](benches/kospi_on_packet_nostdout.png)-->
+<img width="3198" height="1020" alt="merged-image-1784825998301" src="https://github.com/user-attachments/assets/b49d4e56-3cf5-4df6-9c80-723e2900ea8b" />
 
 See [kospi200.pages.dev](https://kospi200.pages.dev/on_packet/report) for the full report.
 
